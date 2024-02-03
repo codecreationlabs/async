@@ -77,3 +77,55 @@ func TestNestedErrorTask(t *testing.T) {
 		t.Error("expected an error")
 	}
 }
+
+func TestLargeTasks(t *testing.T) {
+	ctx := context.Background()
+	mainTask := New(ctx, WithFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
+		return nil, nil
+	}))
+
+	for i := 0; i < 1000; i++ {
+		subTask := New(ctx, WithFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
+			return i, nil
+		}))
+		mainTask.AddSubtasks(subTask)
+	}
+
+	if _, err := Run([]*Task{mainTask}); err != nil {
+		t.Error("should not throw an error")
+	}
+}
+
+var (
+	count = 10000
+)
+
+func BenchmarkLarge(b *testing.B) {
+	values := []interface{}{}
+
+	for i := 0; i < count; i++ {
+		values = append(values, i)
+	}
+}
+
+func BenchmarkLargeTasks(b *testing.B) {
+	ctx := context.Background()
+	mainTask := New(ctx, WithFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
+		return nil, nil
+	}))
+
+	for i := 0; i < count; i++ {
+		subTask := New(ctx, WithFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
+			tc := MustDecodeCtx(ctx)
+			j := tc.Task.Values[0]
+
+			return j, nil
+		}), WithValues(i))
+		mainTask.AddSubtasks(subTask)
+	}
+
+	_, err := Run([]*Task{mainTask})
+	if err != nil {
+		b.Error("should not throw an error")
+	}
+}
