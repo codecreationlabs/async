@@ -30,12 +30,12 @@ type CtxKey string
 // - Run: the function that performs the task
 // - Revert: the function that reverts the task
 type Task struct {
-	ID       string
-	Values   []interface{}
-	Context  context.Context
-	Subtasks []*Task
-	Run      TaskFunc
-	Revert   TaskFunc
+	ID         string
+	Parameters []interface{}
+	Context    context.Context
+	Subtasks   []*Task
+	Run        TaskFunc
+	Revert     TaskFunc
 }
 
 // TaskContext represents the context of a task and its parent task.
@@ -101,47 +101,18 @@ func WithFunc(f TaskFunc) TaskConfigFunc {
 	}
 }
 
-func WithValues(values ...interface{}) TaskConfigFunc {
+// WithRevertFunc is a function that returns a TaskConfigFunc which sets the Revert function of a Task struct to the provided TaskFunc.
+// The Revert function is meant to handle the reversal of actions performed by the Run function of the Task.
+func WithRevertFunc(f TaskFunc) TaskConfigFunc {
 	return func(t *Task) {
-		t.Values = values
+		t.Revert = f
 	}
 }
 
-// WithRevert is a function that returns a TaskConfigFunc which sets the Revert function of a Task struct to the provided TaskFunc.
-// The Revert function is meant to handle the reversal of actions performed by the Run function of the Task.
-//
-// Example usage:
-//
-//	foo := task.New(context.Background(), task.WithRevert(func(ctx context.Context, values ...interface{}) (interface{}, error) {
-//	    // delete user
-//	    log.Printf("rollback and delete user.. %v \n", values)
-//	    return nil, nil
-//	}))
-//
-//	bar := task.New(context.Background(), task.WithFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
-//	    // process user
-//	    log.Printf("process user.. \n")
-//
-//	    user := values[0].(User)
-//
-//	    if user.ID != "quzbuz" {
-//	        return nil, fmt.Errorf("expected user id to be %s, got %s", "foobar", "quzbuz")
-//	    }
-//
-//	    // what happens if we have an error here?
-//	    return nil, nil
-//	}), task.WithRevert(func(ctx context.Context, values ...interface{}) (interface{}, error) {
-//	    log.Printf("rollback anything we did while processing..")
-//	    return nil, nil
-//	}))
-//
-//	foo.AddSubtasks(bar)
-//	if _, err := task.Run([]*task.Task{foo}); err != nil {
-//	    panic(err)
-//	}
-func WithRevert(f TaskFunc) TaskConfigFunc {
+// WithParameters takes a variadic number of parameters and returns a TaskConfigFunc.
+func WithParameters(parameters ...interface{}) TaskConfigFunc {
 	return func(t *Task) {
-		t.Revert = f
+		t.Parameters = parameters
 	}
 }
 
@@ -212,7 +183,7 @@ func Revert(tasks []*Task, values ...interface{}) {
 //			ID: "foobar",
 //		}
 //		return u, nil
-//	}), task.WithRevert(func(ctx context.Context, values ...interface{}) (interface{}, error) {
+//	}), task.WithRevertFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
 //
 //		// delete user
 //		log.Printf("rollback and delete user.. %v \n", values)
@@ -236,7 +207,7 @@ func Revert(tasks []*Task, values ...interface{}) {
 //
 //		// what happens if we have an error here?
 //		return nil, nil
-//	}), task.WithRevert(func(ctx context.Context, values ...interface{}) (interface{}, error) {
+//	}), task.WithRevertFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
 //
 //		log.Printf("rollback anything we did while processing..")
 //		return nil, nil

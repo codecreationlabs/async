@@ -117,10 +117,10 @@ func BenchmarkLargeTasks(b *testing.B) {
 	for i := 0; i < count; i++ {
 		subTask := New(ctx, WithFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
 			tc := MustDecodeCtx(ctx)
-			j := tc.Task.Values[0]
+			j := tc.Task.Parameters[0]
 
 			return j, nil
-		}), WithValues(i))
+		}), WithParameters(i))
 		mainTask.AddSubtasks(subTask)
 	}
 

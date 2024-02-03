@@ -8,39 +8,51 @@ import (
 	"time"
 )
 
+type CreateUserParams struct {
+	Name string
+}
+
 type User struct {
 	ID        string
+	Name      string
+	Processed bool
+	CreatedAt string
 	UpdatedAt string
 }
 
 func main() {
-	params := map[string]string{
-		"foo": "bar",
+	params := CreateUserParams{
+		Name: "Foobar Quz",
 	}
 
 	foo := task.New(context.Background(), task.WithFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
 		tc := task.MustDecodeCtx(ctx)
 
-		log.Println(tc.Task.Values)
+		params := tc.Task.Parameters[0].(CreateUserParams)
 
-		// get my vars
 		// create user
-		log.Printf("create user.. \n")
-		u := User{
-			ID: "foobar",
+		now := time.Now().Format(time.RFC3339)
+		user := User{
+			ID:        "foobar",
+			Name:      params.Name,
+			Processed: false,
+			CreatedAt: now,
+			UpdatedAt: now,
 		}
-		return u, nil
-	}), task.WithRevert(func(ctx context.Context, values ...interface{}) (interface{}, error) {
+		log.Printf("create user.. %v \n", user)
+
+		return user, nil
+	}), task.WithRevertFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
 		// delete user
 		log.Printf("rollback and delete user.. %v \n", values)
 		return nil, nil
-	}), task.WithValues(params))
+	}), task.WithParameters(params))
 
 	quz := task.New(context.Background(), task.WithFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
 		log.Printf("prepare processing %v ..\n", values)
 
 		user := values[0].(User)
-
+		user.Processed = true
 		user.UpdatedAt = time.Now().Format(time.RFC3339)
 
 		return user, nil
@@ -48,18 +60,13 @@ func main() {
 
 	bar := task.New(context.Background(), task.WithFunc(func(ctx context.Context, values ...interface{}) (interface{}, error) {
 		// process user
-		log.Printf("process user.. %v \n", values)
-
-		user := values[0].(User)
+		user := values[1].(User)
+		log.Printf("process user.. %v \n", user)
 
 		if user.ID != "quzbuz" {
 			return nil, fmt.Errorf("expected user id to be %s, got %s", "foobar", "quzbuz")
 		}
 
-		// what happens if we have an error here?
-		return nil, nil
-	}), task.WithRevert(func(ctx context.Context, values ...interface{}) (interface{}, error) {
-		log.Printf("rollback anything we did while processing..")
 		return nil, nil
 	}))
 
