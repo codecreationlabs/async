@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 )
@@ -23,6 +24,7 @@ type Task struct {
 	Context  context.Context
 	Subtasks []*Task
 	Run      TaskFunc
+	Revert   TaskFunc
 }
 
 type TaskContext struct {
@@ -73,6 +75,12 @@ func WithFunc(f TaskFunc) TaskConfigFunc {
 	}
 }
 
+func WithRevert(f TaskFunc) TaskConfigFunc {
+	return func(t *Task) {
+		t.Revert = f
+	}
+}
+
 func (t *Task) AddSubtasks(st ...*Task) {
 	for _, subtask := range st {
 		subtask.Context = context.WithValue(t.Context, CtxKey("ctx"), &TaskContext{
@@ -83,26 +91,28 @@ func (t *Task) AddSubtasks(st ...*Task) {
 	t.Subtasks = append(t.Subtasks, st...)
 }
 
-func Run(tasks []*Task, values ...interface{}) error {
+func Revert(tasks []*Task, values ...interface{}) {
 	if len(tasks) == 0 || tasks == nil {
-		return nil
+		return
 	}
 
-	errChan := make(chan error)
+	errChan := make(chan error, len(tasks))
 	wg := sync.WaitGroup{}
 
 	for _, task := range tasks {
+		if task.Revert == nil {
+			return
+		}
 		wg.Add(1)
 		go func(t *Task) {
 			defer wg.Done()
 
-			// TODO make this call external runnable
-			val, err := t.Run(t.Context, values...)
+			val, err := t.Revert(t.Context, values...)
 			if err != nil {
 				errChan <- err
 			}
 			values = append(values, val)
-			if err := Run(t.Subtasks, values...); err != nil {
+			if _, err := Run(t.Subtasks, values...); err != nil {
 				errChan <- err
 			}
 
@@ -118,8 +128,65 @@ func Run(tasks []*Task, values ...interface{}) error {
 	// Collect any error if they've happened
 	for err := range errChan {
 		if err != nil {
-			return err
 		}
 	}
-	return nil
+
+	return
+}
+
+func Run(tasks []*Task, values ...interface{}) ([]interface{}, error) {
+	if len(tasks) == 0 || tasks == nil {
+		return nil, nil
+	}
+
+	errChan := make(chan error, len(tasks))
+	valChan := make(chan []interface{}, 4)
+	wg := sync.WaitGroup{}
+
+	for _, task := range tasks {
+		wg.Add(1)
+		go func(t *Task) {
+			defer wg.Done()
+
+			val, err := t.Run(t.Context, values...)
+			if err != nil {
+				log.Println("err ", err)
+				errChan <- err
+			} else {
+				values = append(values, val)
+				valChan <- []interface{}{val}
+			}
+			vals, err := Run(t.Subtasks, values...)
+			if err != nil {
+				errChan <- err
+			} else {
+				valChan <- vals
+			}
+
+		}(task)
+	}
+
+	go func() {
+		wg.Wait()
+		close(errChan)
+		close(valChan)
+	}()
+
+	// Collect any error if they've happened
+	for err := range errChan {
+		if err != nil {
+			Revert(tasks, values...)
+			return nil, err
+		}
+	}
+
+	// Initialize a slice of interface
+	var results []interface{}
+
+	for val := range valChan {
+		results = append(results, val...)
+	}
+
+	// return the results
+	return results, nil
 }
